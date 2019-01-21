@@ -1,0 +1,66 @@
+name:                px-lang
+version:             0.1.0.0
+github:              "schell/px-lang"
+license:             BSD3
+author:              "Schell Scivally"
+maintainer:          "efsubenovex@gmail.com"
+copyright:           "2018 Schell Scivally"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/schell/px-lang#readme>
+
+dependencies:
+- base            >= 4.7 && < 5
+- containers
+- comonad
+- data-fix
+- deriving-compat
+- doctest         >= 0.15
+- free
+- haskeline
+- megaparsec
+- mtl
+- pretty-show     >= 1.6
+- prettyclass
+
+
+library:
+  source-dirs: src
+  ghc-options:
+  - -Wall
+  - -Werror
+
+executables:
+  px-lang-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -Wall
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - px-lang
+
+tests:
+  px-lang-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - px-lang
+    - directory
+    - filepath
