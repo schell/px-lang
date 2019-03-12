@@ -20,17 +20,18 @@ extra-source-files:
 description:         Please see the README on GitHub at <https://github.com/schell/px-lang#readme>
 
 dependencies:
-- base            >= 4.7 && < 5
+- base               >= 4.7 && < 5
 - containers
 - comonad
 - data-fix
 - deriving-compat
-- doctest         >= 0.15
+- doctest            >= 0.15
 - free
 - haskeline
 - megaparsec
 - mtl
-- pretty-show     >= 1.6
+- parser-combinators
+- pretty-show        >= 1.6
 - prettyclass
 
 

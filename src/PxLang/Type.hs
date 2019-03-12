@@ -21,7 +21,7 @@ import           Control.Monad.Reader                         (MonadReader (..),
                                                                ask)
 import           Control.Monad.RWS                            (RWST, runRWST)
 import           Control.Monad.State                          (MonadState (..),
-                                                               get, put)
+                                                               get, put, evalState, State)
 import           Control.Monad.Writer                         (MonadWriter (..))
 import           Data.Bifunctor
 import           Data.Fix                                     (Fix (..))
@@ -29,7 +29,6 @@ import           Data.List                                    (delete, find)
 import           Data.Map                                     (Map)
 import qualified Data.Map                                     as M
 import           Data.Maybe                                   (fromMaybe)
-import           Data.Monoid
 import           Data.Set                                     (Set)
 import qualified Data.Set                                     as S
 import           "prettyclass" Text.PrettyPrint.HughesPJClass (Pretty (..))
@@ -114,18 +113,13 @@ extendTypeEnv env n sch = TypeEnv $ M.insert n sch $ unTypeEnv env
 
 
 --------------------------------------------------------------------------------
--- A cofree approach to generating type constraints
+-- | A cofree approach to generating type constraints
 -- https://brianmckenna.org/blog/type_annotation_cofree
 --------------------------------------------------------------------------------
 
 
 newtype Assumptions = Assumptions { unAssumptions :: [(Name, Ty)] }
-  deriving (Eq, Show)
-
-
-instance Monoid Assumptions where
-  mempty = Assumptions []
-  mappend (Assumptions a) (Assumptions b) = Assumptions(a ++ b)
+  deriving (Eq, Show, Semigroup, Monoid)
 
 
 extendAssumptions :: Assumptions -> (Name, Ty) -> Assumptions
@@ -149,10 +143,26 @@ namedAssumptions :: Assumptions -> [Name]
 namedAssumptions (Assumptions a) = map fst a
 
 
-data Constraint = ConstraintEq Ty Ty
-                | ConstraintExpInst Ty Scheme
-                | ConstraintImpInst Ty (Set TVar) Ty
-                deriving (Eq, Ord, Show)
+-- | Represents constraints within our type system.
+-- The first is an equality constraint the other two are used to cope with
+-- polymorphism that is introduced by let-expressions.
+data Constraint
+  = ConstraintEq Ty Ty
+  -- ^ An equality constraint reflects that t1 and t2 should be unified at a
+  -- later stage of the type inferencing process.
+  | ConstraintExpInst Ty Scheme
+  -- ^ An explicit instance constraint.
+  -- States that the type has to be a generic instance of the scheme. This
+  -- constraint is convenient if we know the type scheme before we start type
+  -- inferencing an expression. In general the (polymorphic) type of a
+  -- declaration in a let-expression is unknown and must be inferred before it
+  -- can be instantiated.
+  | ConstraintImpInst Ty (Set TVar) Ty
+  -- ^ An implicit instance constraint.
+  -- Expresses that t1 should be an instance of the type scheme that is obtained
+  -- by generalizing type t2 with respect to the set of monomorphic type
+  -- variables M, i.e., quantifying over the polymorphic type variables.
+  deriving (Eq, Ord, Show)
 
 
 instance Pretty Constraint where
@@ -233,9 +243,9 @@ type MonadInfer m = ( MonadReader (Set TVar) m
 -- |
 -- >>> :{
 -- second fst $ runInfer $ do
---   TyVar v1 <- freshVar
+--   v1 <- freshVar
 --   extendMSet v1 $ do
---     TyVar v2 <- freshVar
+--     v2 <- freshVar
 --     return (v1, v2)
 -- >>> :}
 -- Right (TVar {unTVar = 0},TVar {unTVar = 1})
@@ -243,12 +253,16 @@ extendMSet :: MonadInfer m => TVar -> m a -> m a
 extendMSet = local . S.insert
 
 
-freshVar :: MonadInfer m => m Ty
+freshVar :: MonadInfer m => m TVar
 freshVar = do
   Fresh k <- get
   tell [InferenceInfo $ "Alloc'd fresh var " ++ show k]
   put $ Fresh $ succ k
-  return $ TyVar $ TVar k
+  return $ TVar k
+
+
+freshTyVar :: MonadInfer m => m Ty
+freshTyVar = TyVar <$> freshVar
 
 
 --memoizedInfer :: (Ord t, MonadInfer t c m) => (t -> m c) -> t -> m c
@@ -330,7 +344,7 @@ generateConstraints = \case
  -- assumption set. The constraint set is empty.
   _ :< Var k -> do
     tell $ pure $ InferenceInfo $ unwords ["Var", unName k]
-    var <- freshVar
+    var <- freshTyVar
     return (var, singleAssumption k var, mempty)
   -- Literals are just one type, no assumptions. Boom.
   _ :< Lit (LitBool _)  -> return (tyBool, mempty, mempty)
@@ -344,7 +358,7 @@ generateConstraints = \case
   -- assumption sets are merged.
   _ :< App a b -> do
     tell $ pure $ InferenceInfo "App"
-    var             <- freshVar
+    var             <- freshTyVar
     (tya, asa, csa) <- infer a
     (tyb, asb, csb) <- infer b
     let tarr = tyb --> var
@@ -358,7 +372,8 @@ generateConstraints = \case
   -- variable are removed from the assumption set.
   _ :< Lam k a -> do
     tell $ pure $ InferenceInfo $ unwords ["Lam", unName k]
-    var@(TyVar n) <- freshVar
+    n <- freshVar
+    let var = TyVar n
     (ty, as, cs) <- extendMSet n $ infer a
     return ( var --> ty
            , removeAssumption k as
@@ -389,7 +404,7 @@ generateConstraints = \case
            )
   _ :< Op op -> do
     tell $ pure $ InferenceInfo $ unwords ["Op", show op]
-    var <- freshVar
+    var <- freshTyVar
     let ty = case op of
                Add   -> var --> var --> var
                Sub   -> var --> var --> var
@@ -420,7 +435,7 @@ annotateConstraints = runInfer . annotateConstraintsM
 -- Solving constraints
 --------------------------------------------------------------------------------
 
-
+-- | A map of type variables to types.
 newtype Subst = Subst { unSubst :: Map TVar Ty }
 
 
@@ -433,9 +448,13 @@ composeSubst (Subst s1) (Subst s2) =
   Subst $ M.union (M.map (subst $ Subst s1) s2) s1
 
 
+instance Semigroup Subst where
+  (<>) = composeSubst
+
+
 instance Monoid Subst where
   mempty  = emptySubst
-  mappend = composeSubst
+  mappend = (<>)
 
 
 class Substitutable a where
@@ -511,12 +530,15 @@ occursCheck :: TVar -> Ty -> Bool
 occursCheck v = S.member v . ftv
 
 
+-- | Bind a type variable to a type in a substitution.
 bind :: MonadError TypeError m => TVar -> Ty -> m Subst
 bind v t | TyVar v == t    = return mempty
          | occursCheck v t = throwError $ InfiniteType v t
          | otherwise       = return $ Subst $ M.singleton v t
 
 
+-- | Unify two types.
+-- This binds type variables to types within a substitution.
 unify :: MonadError TypeError m => Ty -> Ty -> m Subst
 unify a b | a == b = return mempty
 unify (TyVar k) b = bind k b
@@ -530,10 +552,10 @@ unify a b = throwError $ UnificationFailure a b
 
 -- | Extract the active type variables from a Constraint.
 atv :: Constraint -> Set TVar
-atv (ConstraintEq ta tb) = S.union (ftv ta) $ ftv tb
+atv (ConstraintEq ta tb) = S.union (ftv ta) (ftv tb)
 atv (ConstraintImpInst ta ms tb) =
-  S.union (ftv ta) $ S.intersection (ftv ms) $ ftv tb
-atv (ConstraintExpInst ta s) = S.union (ftv ta) $ ftv s
+  S.union (ftv ta) $ S.intersection (ftv ms) (ftv tb)
+atv (ConstraintExpInst ta s) = S.union (ftv ta) (ftv s)
 
 
 -- | Find the next solvable Constraint and return it separated from the rest of
@@ -571,7 +593,7 @@ solve (x:xs) = uncurry subSolve $ nextSolvable x xs
         generalize free t = Forall (S.toList $ S.difference (ftv t) free) t
         instantiate :: Scheme -> m Ty
         instantiate (Forall as t) = do
-          bs <- mapM (const freshVar) as
+          bs <- mapM (const freshTyVar) as
           let s = Subst $ M.fromList $ zip as bs
           return $ subst s t
 
@@ -630,7 +652,7 @@ annotateType = runInfer . annotateTypeM
 -- a -> a
 --
 -- >>> parsePutPrettyType "let x = x in x"
--- e
+-- a
 --
 -- >>> parsePutPrettyType "let x = 0 in x"
 -- Int
@@ -645,13 +667,13 @@ annotateType = runInfer . annotateTypeM
 -- a -> Int
 --
 -- >>> parsePutPrettyType "let i = \\x -> 0 in i"
--- e -> Int
+-- a -> Int
 --
 -- >>> parsePutPrettyType "let i = (\\x -> x) in i"
--- h -> h
+-- a -> a
 --
 -- >>> parsePutPrettyType "let id = \\x -> let y = x in y in id id"
--- t -> t
+-- a -> a
 --
 -- >>> parsePutPrettyType "(\\x y -> #add x y) True 6"
 -- Could not unify type Bool with Int
@@ -679,7 +701,38 @@ typeOf :: Cofree Expr Ty -> Ty
 typeOf = onlyAnnotation
 
 
+-- | Renames a type to contain type variables grabbed from the top down.
+--
+-- >>> :{
+-- let a = TyVar $ TVar 66
+--     b = TyVar $ TVar 67
+--     ty = a --> b
+-- in PP.render $ pPrint $ renameType ty
+-- >>> :}
+-- "a -> b"
+renameType :: Ty -> Ty
+renameType = flip evalState (M.empty, 0) . go
+  where
+    go :: Ty -> State (Map Int Int, Int) Ty
+    go (TyVar (TVar n)) = do
+      (ts, k) <- get
+      case M.lookup n ts of
+        Just t -> return $ TyVar $ TVar t
+        Nothing -> do
+          put (M.insert n k ts, succ k)
+          return $ TyVar $ TVar k
+    go (TyArr t1 t2) =
+      TyArr
+        <$> go t1
+        <*> go t2
+    go ty = return ty
+
+
+--
 parsePutPrettyType :: String -> IO ()
-parsePutPrettyType = either pp pp . second (typeOf . fst) . parseInfer
+parsePutPrettyType =
+  either pp pp
+  . second (renameType . typeOf . fst)
+  . parseInfer
   where pp :: Pretty a => a -> IO ()
         pp = putStrLn . PP.render . pPrint

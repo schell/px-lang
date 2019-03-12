@@ -2,7 +2,7 @@
 `px` is a simply typed lambda calculus for graphics. It is
 inspired by David Himmelstrup's [fvg](https://github.com/Lemmih/fvg),
 Sean Lee's [hylogen](https://github.com/sleexyz/hylogen) and
-Stepen Diehl's amazing "Write You a Haskell" [series](http://dev.stephendiehl.com/fun/).
+Stephen Diehl's amazing "Write You a Haskell" [series](http://dev.stephendiehl.com/fun/).
 It uses an interesting cofree approach to type inference inspired by
 [Brian McKenna](https://brianmckenna.org/blog/type_annotation_cofree) and is largely
 based on the papers "Generalizing Hindley-Milner type Inference Algorithms" by

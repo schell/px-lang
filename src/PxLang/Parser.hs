@@ -8,15 +8,20 @@
 {-# LANGUAGE TypeFamilies          #-}
 module PxLang.Parser where
 
-import           Control.Monad              (msum)
-import           Data.Bifunctor             (bimap)
-import           Data.Char                  (isUpper)
-import           Data.Fix                   (Fix (..))
-import           Data.Void                  (Void)
-import           Text.Megaparsec
-import           Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
-import           Text.Megaparsec.Expr       (makeExprParser)
+import           Control.Monad                  (msum)
+import           Control.Monad.Combinators.Expr (makeExprParser)
+import           Data.Bifunctor                 (bimap)
+import           Data.Char                      (isUpper)
+import           Data.Fix                       (Fix (..))
+import           Data.Void                      (Void)
+import           Text.Megaparsec                (MonadParsec, ParseErrorBundle,
+                                                 Parsec, Token, Tokens, between,
+                                                 errorBundlePretty, many,
+                                                 notFollowedBy, parse, satisfy,
+                                                 some, try, (<?>), (<|>))
+import           Text.Megaparsec.Char           (alphaNumChar, letterChar,
+                                                 space, space1, string)
+import qualified Text.Megaparsec.Char.Lexer     as L
 
 import           PxLang.Syntax
 
@@ -32,12 +37,12 @@ type PxParser e s m = (MonadParsec e s m, CharToken s)
 -- >>> :set -XOverloadedStrings -XTypeApplications
 
 
-docParse :: Parsec e String a -> String -> Either (ParseError (Token String) e) a
+docParse :: Parsec e String a -> String -> Either (ParseErrorBundle String e) a
 docParse p = parse p "<doc comments>"
 
 
 roundtrip
-  :: Parsec e String (Fix Expr) -> String -> Either (ParseError (Token String) e) String
+  :: Parsec e String (Fix Expr) -> String -> Either (ParseErrorBundle String e) String
 roundtrip p = fmap pxPretty . docParse p
 
 
@@ -46,7 +51,7 @@ testParse p = sequence_ . fmap putStr . roundtrip p
 
 
 replParse :: Parsec Void String (Fix Expr) -> String -> Either String (Fix Expr)
-replParse p = bimap parseErrorPretty id . parse p "repl"
+replParse p = bimap errorBundlePretty id . parse p "repl"
 
 
 prettyReplParse :: String -> Either String (Fix Expr)
