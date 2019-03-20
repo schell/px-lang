@@ -1,12 +1,16 @@
 # px-lang
-`px` is a simply typed lambda calculus for graphics. It is
-inspired by David Himmelstrup's [fvg](https://github.com/Lemmih/fvg),
+`px` aims to be a starting point for domain specific, typed lambda calculi.
+It is inspired by David Himmelstrup's [fvg](https://github.com/Lemmih/fvg),
 Sean Lee's [hylogen](https://github.com/sleexyz/hylogen) and
 Stephen Diehl's amazing "Write You a Haskell" [series](http://dev.stephendiehl.com/fun/).
 It uses an interesting cofree approach to type inference inspired by
 [Brian McKenna](https://brianmckenna.org/blog/type_annotation_cofree) and is largely
 based on the papers "Generalizing Hindley-Milner type Inference Algorithms" by
-[Heeren, Hage and Swierstra](http://soft.vub.ac.be/~cfscholl/Capita-Selecta-2015/papers/2002%20Heeren.pdf).
+[Heeren, Hage and Swierstra](http://soft.vub.ac.be/~cfscholl/Capita-Selecta-2015/papers/2002%20Heeren.pdf)
+
+I aim to make the language extensible with domain specific parsers, primitives and
+code generators. The goal is to make `px` be the main ingredient in a bunch of
+little functional languages.
 
 # notes
 
@@ -17,76 +21,53 @@ It is not in a usable state, though it may compile and it may pass tests. The go
 are lofty and unatainable with my current availability for OSS. It could be a fun
 study though!
 
-# example? - may not be accurate or up to date
+# target examples
+These aren't functional yet, but there an example of what I'd like the language
+to look like in different domains (it's basically Haskell).
 
-I don't think this is accurate any longer, see the tests for examples.
-I think I was using this example as a target for the EDSL version of px.
-
-Here is an example of a simple pass through shader that
-varies its red channel over time.
-
+Coloring a canvas in WASM:
 ```haskell
-vertexShader
-  :: Mat4 Float
-  -> Mat4 Float
-  -> Vec2 Float
-  -> Vec4 Float
-  -> (Vec4 Float, Vec4 Float)
-vertexShader projection modelview position color =
-  let Vec2 x y = position
-  in (projection * modelview * Vec4 x y 0 1, color)
+munchingSquares :: Vector Word4
+munchingSquares = do
+  x <- range 0 255
+  y <- range 0 255
+  return $ xor x y
 
 
-fragmentShader
-  :: Float
-  -> Vec4 Float
-  -> Vec4 Float
-fragmentShader time color =
-  let Vec4 r g b a = color
-  in Vec4 (r * sin time) g b a
-
-
-program
-  :: Mat4 Float
-  -> Mat4 Float
-  -> Float
-  -> Buffer (Vec2 Float)
-  -> Buffer (Vec4 Float)
-  -> Image
-program projection modelview time positionBuffer colorBuffer =
-  let buffers  = zipBuffers positionBuffer colorBuffer
-      vertices = map (uncurry (vertexShader projection modelview)) buffer
-      pixels   = bimap id (fragmentShader time) vertices
-  in Image pixels
+main :: WASM ()
+main = do
+  -- Make the canvas and set the pixels
+  c <- newCanvas 256 256
+  setPixels c munchingSquares
+  -- Add it to the DOM
+  b <- body =<< document
+  appendChild b c
 ```
+
+Coloring a canvas in WASM:
 
 
 ## features
 * [x] ML syntax
   * [x] let expressions
+  * [ ] indentation-sensitive parsing
   * [ ] pattern matching
   * [ ] case expressions
-* [x] repl for evaluating expressions at the command line
-* [x] hendley-milner type inference
-* [ ] spir-v codegen
-  * [ ] and then cc to msl
-  * [ ] and then cc to hsl
-  * [ ] and then cc to glsl
-  * [x] and then ...
-  * [x] no and then!
-* [ ] user defined mixfix operators
-* [ ] vector and matrix primitives
 * [ ] custom data types
 * [ ] type classes
-* [ ] quasiquoter for haskell edsl, compiling and checking at haskell compile
-      time
-* [ ] auto generate linkage functions for host platforms/langs
+* [ ] user defined primitives
+* [ ] user defined mixfix operators
+* [ ] user defined sugar
+* [x] repl for evaluating expressions at the command line
+* [x] hendley-milner type inference
+* [ ] wasm codegen
+* [ ] spir-v codegen
 
-
-## links
+## links to implementation helpers
 
 These are bookmarked links from my browser that are on topic:
 
 * [Demystifying Type Classes](http://okmij.org/ftp/Computation/typeclass.html)
 * [Hindley-Milner type inference with constraints](https://kseo.github.io/posts/2017-01-02-hindley-milner-inference-with-constraints.html)
 * [Renaissance: a functional shading language](https://chadaustin.me/hci_portfolio/thesis.pdf)
+* [Parsing Mixfix Operators](http://www.cse.chalmers.se/~nad/publications/danielsson-norell-mixfix.pdf)
