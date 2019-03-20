@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 module PxLang.Parser where
 
-import           Control.Monad                  (msum)
+import           Control.Monad                  (msum, void)
 import           Control.Monad.Combinators.Expr (makeExprParser)
 import           Data.Bifunctor                 (bimap)
 import           Data.Char                      (isUpper)
@@ -20,16 +20,16 @@ import           Text.Megaparsec                (MonadParsec, ParseErrorBundle,
                                                  notFollowedBy, parse, satisfy,
                                                  some, try, (<?>), (<|>))
 import           Text.Megaparsec.Char           (alphaNumChar, letterChar,
-                                                 space, space1, string)
+                                                 space, space1, string, char)
 import qualified Text.Megaparsec.Char.Lexer     as L
 
 import           PxLang.Syntax
 
 
-type CharToken s = (Token s ~ Char, Tokens s ~ String)
-
-
-type PxParser e s m = (MonadParsec e s m, CharToken s)
+type PxParser e s m = ( MonadParsec e s m
+                      , Token s ~ Char
+                      , Tokens s ~ String
+                      )
 
 
 -- $setup
@@ -62,11 +62,23 @@ prettyReplParse = replParse (space *> expr)
 -- Lexer
 --------------------------------------------------------------------------------
 
+lineComment :: PxParser e s m => m ()
+lineComment  = L.skipLineComment "--"
 
+
+blockComment :: PxParser e s m => m ()
+blockComment = L.skipBlockComment "{-" "-}"
+
+
+-- | A "space consumer" parser that consumes newlines.
+scn :: PxParser e s m => m ()
+scn = L.space space1 lineComment blockComment
+
+
+-- | A "space consumer" parser that does not consume newlines.
+-- We don't even allow tabs. Tab is a soda, not a char.
 sc :: PxParser e s m => m ()
-sc = L.space space1 lineComment blockComment
-  where lineComment  = L.skipLineComment "--"
-        blockComment = L.skipBlockComment "{-" "-}"
+sc = L.space (void $ some (char ' ')) lineComment blockComment
 
 
 lexeme :: PxParser e s m => m a -> m a
@@ -211,6 +223,16 @@ lit = (number <|> bool) <?> "lit"
 --
 -- >>> testParse lambda "\\x y -> add x y"
 -- \x -> \y -> add x y
+--
+-- >>>
+-- :{
+-- testParse lambda $ unlines
+--   [ "\\x"
+--   , "  y"
+--   , "  z -> add x y (succ z)"
+--   ]
+-- :}
+-- \x -> \y -> \z -> add x y (succ z)
 lambda :: PxParser e s m => m (Fix Expr)
 lambda = flip (<?>) "lambda" $ do
   _    <- symbol "\\"
@@ -218,6 +240,11 @@ lambda = flip (<?>) "lambda" $ do
   _    <- symbol "->"
   body <- expr
   return $ foldr ((Fix .) . Lam) body args
+
+
+blah :: a -> b -> c -> ()
+blah = \_x
+  _y            _z -> ()
 
 
 -- | Parse a let binding expression.

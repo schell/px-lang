@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 module PxLang.Eval where
 
 import           Control.Arrow          ((>>>))
@@ -14,36 +15,20 @@ import           Control.Monad.Reader   (MonadReader (..), asks)
 import           Data.Fix
 import           Data.Map               (Map)
 import qualified Data.Map               as M
+import           Data.Semigroup         (Semigroup)
 import           Text.Show.Pretty       (ppShow)
 
 import           PxLang.Syntax
 
 
 newtype TermEnv = TermEnv { unTermEnv :: Map String (Fix Expr) }
-                deriving (Show)
+                deriving (Show, Semigroup, Monoid)
 
 
 showScope :: TermEnv -> String
 showScope (TermEnv env) =
   let hdrs = "scope: " : repeat "       "
   in unlines $ zipWith (++) hdrs $ lines $ ppShow $ pxPretty <$> env
-
-
--- | In order to support some primitive operations we're just sticking some
--- named lambdas in here.
-prelude :: TermEnv
-prelude = TermEnv mempty
---prelude = TermEnv $ M.fromList [ ("add", f Add)
---                               , ("sub", f Sub)
---                               , ("mult", f Mult)
---                               , ("div", f Div)
---                               , ("equal", f Equal)
---                               ]
---  where f op = let x = Name "x"
---                   y = Name "y"
---                   in Fix $ Lam x
---                    $ Fix $ Lam y
---                    $ Fix $ Op op (Fix $ Var x) (Fix $ Var y)
 
 
 data Repl = Repl { replTermEnv     :: TermEnv
@@ -54,7 +39,7 @@ data Repl = Repl { replTermEnv     :: TermEnv
 
 
 defaultRepl :: Repl
-defaultRepl = Repl { replTermEnv     = prelude
+defaultRepl = Repl { replTermEnv     = mempty
                    , replEvalDepth   = 0
                    , replBreakOnEval = False
                    , replParseOnly   = False

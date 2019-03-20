@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import PxLang.Repl
 
 main :: IO ()
-main = someFunc
+main = repl

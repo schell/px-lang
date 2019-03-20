@@ -42,7 +42,7 @@ library:
   - -Werror
 
 executables:
-  px-lang-exe:
+  px-repl:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -54,7 +54,7 @@ executables:
     - px-lang
 
 tests:
-  px-lang-test:
+  px-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
